@@ -64,21 +64,22 @@ fn colora_from_hex(hex: &str) -> anyhow::Result<libuserbar::ColorA> {
 
 fn parse_placement(s: &str) -> anyhow::Result<libuserbar::Placement> {
     use libuserbar::AxisPlacement;
+    use libuserbar::AxisAnchor;
     let parts: Vec<_> = s.split(',').collect();
     let parts: [&str; 2] = parts
         .try_into()
         .or(Err(anyhow::anyhow!("expected 2 components")))?;
     let do_part = |part: &str| -> Option<AxisPlacement> {
         Some(match part {
-            "auto" => AxisPlacement::Auto,
-            "center" => AxisPlacement::Center,
+            "auto" => AxisPlacement { anchor: AxisAnchor::Auto, offset: 0 },
+            "center" => AxisPlacement { anchor: AxisAnchor::Center, offset: 0 },
             x => {
                 if let Some(x_strip) = x.strip_prefix('-') {
                     let d = x_strip.parse::<isize>().ok()?;
-                    AxisPlacement::End(d)
+                    AxisPlacement { anchor: AxisAnchor::End, offset: d }
                 } else {
                     let d = x.parse::<isize>().ok()?;
-                    AxisPlacement::Start(d)
+                    AxisPlacement { anchor: AxisAnchor::Start, offset: d }
                 }
             }
         })
@@ -131,17 +132,15 @@ options:
         opts.height = v;
     }
     let outname: String = args.value_from_str(["-o", "--output"])?;
-    let bgimg_storage;
     if let Some(v) = args.opt_value_from_str::<_, String>(["-i", "--bg-image"])? {
         let (buf, width, height) = readimg(&v)?;
-        bgimg_storage = buf;
         opts.bg_image = Some(libuserbar::BgImage {
             width,
             height,
-            data: &bgimg_storage,
+            data: buf,
             placement: libuserbar::Placement {
-                horz: libuserbar::AxisPlacement::Auto,
-                vert: libuserbar::AxisPlacement::Auto,
+                horz: libuserbar::AxisPlacement { anchor: libuserbar::AxisAnchor::Auto, offset: 0 },
+                vert: libuserbar::AxisPlacement { anchor: libuserbar::AxisAnchor::Auto, offset: 0 },
             },
         });
     }
@@ -153,7 +152,7 @@ options:
     }
 
     let text: String = args.value_from_str(["-t", "--text"])?;
-    opts.text = &text;
+    opts.text = text;
     if let Some(v) = args.opt_value_from_fn("--text-pos", parse_placement)? {
         opts.text_placement = v;
     }

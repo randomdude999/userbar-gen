@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset=utf-8>
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+        <title>userbar generator</title>
+    </head>
+    <style>
+    .distinp {
+        width: 5em;
+    }
+    details {
+        border: 1px solid #aaa;
+        border-radius: 3px;
+        padding: 2px;
+    }
+    body {
+        max-width: 600px;
+        margin: auto;
+        margin-top: 10px;
+        font-family: "Noto Sans", sans-serif;
+        font-size: 16px;
+    }
+    p, details {
+        margin: 0;
+        margin-top: 6px;
+        margin-bottom: 6px;
+    }
+    </style>
+    <!-- from https://github.com/mdbassit/Coloris -->
+    <link rel="stylesheet" href="coloris.min.css"/>
+    <script src="coloris.min.js"></script>
+    <body><h1>userbar generator</h1>
+        <p>you can disable most effects by making them completely transparent.</p>
+        <div id=controls>
+            <p>size: <input type=number id=width value=350 min=1 class=distinp>x<input type=number id=height value=19 min=1 class=distinp>px</p>
+            <p>BG color: top <input type=text size=12 data-coloris id=bgtop value="#0000ff">, bottom <input type=text size=12 data-coloris id=bgbottom value="#80ffff"></p>
+            <p>text: <input type=text size=40 id=textinp value="hello world!"></p>
+            <details><summary>customize text placement/color</summary>
+                <p><label for=textcol>color: </label><input type=text size=12 data-coloris id=textcol value="#ffffffff">, <label for=outlinecol>outline: </label><input type=text size=12 data-coloris id=outlinecol value="#000000ff"></p>
+                <p><label for=texthorzkind>horizontal alignment: </label><select id=texthorzkind><option value=Start>left edge</option><option value=Center>middle</option><option value=End selected>right edge</option></select><span id=texthorzoffwrap>, <label for=texthorzoff>distance: <input id=texthorzoff type=number value=7 class=distinp></span></p>
+                <p><label for=textvertkind>vertical alignment: </label><select id=textvertkind><option value=Start>top edge</option><option value=Center selected>middle</option><option value=End>bottom edge</option></select><span id=textvertoffwrap>, <label for=textvertoff>distance: <input id=textvertoff type=number value=0 class=distinp></span></p>
+            </details>
+            <p><label for=ellipsecol>gloss color: </label><input type=text size=12 data-coloris id=ellipsecol value="#ffffff28"></p>
+            <p><label for=bordercol>border color: </label><input type=text size=12 data-coloris id=bordercol value="#000000ff"></p>
+            <p><label for=stripecol>scanline color: </label><input type=text size=12 data-coloris id=stripecol value="#000000b4">, <label for=stripeflip>flip direction: </label><input type=checkbox id=stripeflip>, <label for=stripespacing>spacing: </label><input type=number id=stripespacing class=distinp value=4>px</p>
+            <details><summary>background image</summary>
+                <input type=file id=bgimg accept="image/*"><input type=button value="Clear" id=clearbg> (or you can Ctrl+V an image too)
+                <p><label for=imghorzkind>horizontal alignment: </label><select id=imghorzkind><option value=Start selected>left edge</option><option value=Center>middle</option><option value=End>right edge</option></select><span id=imghorzoffwrap>, <label for=imghorzoff>distance: <input id=imghorzoff type=number value=7 class=distinp></span></p>
+                <p><label for=imgvertkind>vertical alignment: </label><select id=imgvertkind><option value=Start>top edge</option><option value=Center selected>middle</option><option value=End>bottom edge</option></select><span id=imgvertoffwrap>, <label for=imgvertoff>distance: <input id=imgvertoff type=number value=0 class=distinp></span></p>
+            </details>
+            <!--<input type=button value="Update" id=updatebtn>-->
+        </div>
+        <p>result: <input type=button value=save id=savebtn></p>
+        <canvas id=canv width=1 height=1></canvas>
+        <script type="module">
+        import init, { generate_rgba, Options, make_color, make_colora, AxisAnchor, make_placement, BgImage, StripePattern } from './libuserbar.js';
+        const $ = (x) => document.querySelector(x);
+        const $$ = (x) => document.querySelectorAll(x);
+        const $v = x => document.getElementById(x).value;
+        const canvas = $("#canv");
+        const ctx = canvas.getContext("2d");
+        let bgImageData = null;
+        function mkcol(col, a) {
+            let r = parseInt(col.substr(1,2), 16);
+            let g = parseInt(col.substr(3,2), 16);
+            let b = parseInt(col.substr(5,2), 16);
+            let alpha = 255;
+            if(col.length == 9) {
+                alpha = parseInt(col.substr(7,2), 16);
+            }
+            if(a) return make_colora(r, g, b, alpha);
+            else return make_color(r, g, b);
+        }
+        function mkplacement(x) {
+            return make_placement(AxisAnchor[$v(x+"horzkind")], $v(x+"horzoff"), AxisAnchor[$v(x+"vertkind")], $v(x+"vertoff"));
+        }
+        function gen() {
+            let opts = new Options();
+            opts.text = $v("textinp");
+            opts.width = $v("width");
+            opts.height = $v("height");
+            opts.bg_top_color = mkcol($v("bgtop"), false);
+            opts.bg_bottom_color = mkcol($v("bgbottom"), false);
+            opts.text_color = mkcol($v("textcol"), true);
+            opts.text_outline_color = mkcol($v("outlinecol"), true);
+            opts.diag_stripes = new StripePattern(mkcol($v("stripecol"), true), $("#stripeflip").checked, $v("stripespacing"));
+            if(bgImageData !== null) {
+                opts.bg_image = new BgImage(bgImageData.width, bgImageData.height, bgImageData.data, mkplacement("img"));
+            }
+            opts.ellipse_color = mkcol($v("ellipsecol"), true);
+            opts.border_color = mkcol($v("bordercol"), true);
+            opts.text_placement = mkplacement("text");
+            const data = generate_rgba(opts);
+            const data_clamp = new Uint8ClampedArray(data);
+
+            const imd = new ImageData(data_clamp, opts.width, opts.height);
+            canvas.width = opts.width;
+            canvas.height = opts.height;
+            ctx.putImageData(imd, 0, 0);
+        }
+        function setBgFile(files) {
+            bgImageData = null;
+            for(let f of files) {
+                if(!f.type.startsWith("image/")) {continue;}
+                let url = URL.createObjectURL(f);
+                let im = new Image();
+                im.src = url;
+                im.addEventListener("load", () => {
+                    URL.revokeObjectURL(url);
+                    let canv = document.createElement("canvas", {width: im.width, height: im.height});
+                    let ctx = canv.getContext("2d");
+                    ctx.drawImage(im, 0, 0);
+                    bgImageData = ctx.getImageData(0, 0, im.width, im.height);
+                    gen();
+                });
+            }
+        }
+        async function realinit() {
+            await init();
+            //$("#updatebtn").addEventListener("click", gen);
+            $$("#controls input, #controls select").forEach(x => x.addEventListener("input", gen));
+            let bgimg = $("#bgimg");
+            bgimg.addEventListener("change", () => { setBgFile(bgimg.files); });
+            window.addEventListener("paste", (e) => {
+                if(e.clipboardData.files.length == 0) return;
+                bgimg.files = e.clipboardData.files; setBgFile(bgimg.files);
+            })
+            $("#clearbg").addEventListener("click", () => {
+                bgImageData = null;
+                bgimg.value = bgimg.defaultValue;
+                gen();
+            });
+            for(let x of ["texthorz", "textvert", "imghorz", "imgvert"]) {
+                let handler = () => {
+                    let v = $v(x+"kind");
+                    if(v == "Center") $("#"+x+"offwrap").style.display = "none";
+                    else $("#"+x+"offwrap").style.display = "inline";
+                };
+                handler();
+                $("#"+x+"kind").addEventListener("input", handler);
+            }
+            bgimg.value = bgimg.defaultValue;
+            $("#savebtn").addEventListener("click", () => {
+                let uri = canvas.toDataURL("image/png");
+                let a = document.createElement('a');
+                a.href = uri;
+                a.download = "userbar.png";
+                a.click();
+            });
+            Coloris.setInstance('#bgtop, #bgbottom', {alpha: false});
+            gen();
+        }
+        realinit();
+        </script>
+    </body>
+</html>

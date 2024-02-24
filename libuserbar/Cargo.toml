@@ -8,7 +8,9 @@ edition = "2021"
 [lib]
 name = "libuserbar"
 path = "lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 itertools = "0.12.1"
 phf = { version = "0.11.2", features = ["macros"] }
+wasm-bindgen = "0.2.91"

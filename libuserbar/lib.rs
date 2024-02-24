@@ -1,17 +1,27 @@
 mod drawing;
 mod font;
 mod font_data;
+use wasm_bindgen::prelude::*;
 
+#[wasm_bindgen]
 #[derive(Clone, Copy, Debug)]
-pub enum AxisPlacement {
+pub enum AxisAnchor {
     Auto,
     Center,
-    // leave this much gap with left/top edge
-    Start(isize),
-    // leave this much gap with right/bottom edge
-    End(isize),
+    // leave `offset` pixel gap with left/top edge
+    Start,
+    // leave `offset` pixel gap with right/bottom edge
+    End,
 }
 
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug)]
+pub struct AxisPlacement {
+    pub offset: isize,
+    pub anchor: AxisAnchor,
+}
+
+#[wasm_bindgen]
 #[derive(Clone, Copy, Debug)]
 pub struct Placement {
     pub horz: AxisPlacement,
@@ -20,27 +30,30 @@ pub struct Placement {
 
 impl AxisPlacement {
     fn to_offset(self, auto_v: AxisPlacement, inner_sz: isize, outer_sz: isize) -> isize {
-        let val = if let AxisPlacement::Auto = self {
+        let val = if let AxisAnchor::Auto = self.anchor {
             auto_v
         } else {
             self
         };
-        match val {
-            AxisPlacement::Auto => panic!(),
-            AxisPlacement::Center => (outer_sz - inner_sz) / 2,
-            AxisPlacement::Start(off) => off,
-            AxisPlacement::End(off) => outer_sz - inner_sz - off,
+        match val.anchor {
+            AxisAnchor::Auto => panic!(),
+            AxisAnchor::Center => (outer_sz - inner_sz) / 2,
+            AxisAnchor::Start => val.offset,
+            AxisAnchor::End => outer_sz - inner_sz - val.offset,
         }
     }
 }
 
 // RGB tuple.
+#[wasm_bindgen]
 #[derive(Clone, Copy, Debug)]
 pub struct Color(pub u8, pub u8, pub u8);
 // RGBA tuple (not premultiplied).
+#[wasm_bindgen]
 #[derive(Clone, Copy, Debug)]
 pub struct ColorA(pub u8, pub u8, pub u8, pub u8);
 
+#[wasm_bindgen]
 #[derive(Clone, Copy, Debug)]
 pub struct StripePattern {
     // originally only black.
@@ -51,22 +64,38 @@ pub struct StripePattern {
     pub spacing: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct BgImage<'a> {
+#[wasm_bindgen]
+impl StripePattern {
+    #[wasm_bindgen(constructor)]
+    pub fn new(color: ColorA, on_main_diagonal: bool, spacing: usize) -> Self {
+        Self { color, on_main_diagonal, spacing }
+    }
+}
+
+#[wasm_bindgen(getter_with_clone)]
+#[derive(Clone, Debug)]
+pub struct BgImage {
     pub width: usize,
     pub height: usize,
     // data must be bytes in RGBA order, 8 bits per channel.
-    pub data: &'a [u8],
+    pub data: Vec<u8>,
+    // placement of image, defaults to top left
     pub placement: Placement,
-    // offset relative to top-left corner of the generated image.
-    /*pub offset_x: isize,
-    pub offset_y: isize,*/
 }
 
-pub struct Options<'a> {
+#[wasm_bindgen]
+impl BgImage {
+    #[wasm_bindgen(constructor)]
+    pub fn new(width: usize, height: usize, data: Vec<u8>, placement: Placement) -> Self {
+        Self { width, height, data, placement }
+    }
+}
+
+#[wasm_bindgen(getter_with_clone)]
+pub struct Options {
     pub width: usize,
     pub height: usize,
-    pub text: &'a str,
+    pub text: String,
     pub text_placement: Placement,
     pub bg_top_color: Color,
     pub bg_bottom_color: Color,
@@ -79,13 +108,24 @@ pub struct Options<'a> {
     pub border_color: Option<ColorA>,
     // these were called "scanlines" in the original generator.
     pub diag_stripes: Option<StripePattern>,
-    pub bg_image: Option<BgImage<'a>>,
+    pub bg_image: Option<BgImage>,
 }
 
-impl<'a> Options<'a> {
+#[wasm_bindgen]
+pub fn make_color(r: u8, g: u8, b: u8) -> Color { Color(r, g, b) }
+#[wasm_bindgen]
+pub fn make_colora(r: u8, g: u8, b: u8, a: u8) -> ColorA { ColorA(r, g, b, a) }
+#[wasm_bindgen]
+pub fn make_placement(horz_anchor: AxisAnchor, horz_off: isize, vert_anchor: AxisAnchor, vert_off: isize) -> Placement {
+    Placement { horz: AxisPlacement { offset: horz_off, anchor: horz_anchor }, vert: AxisPlacement { offset: vert_off, anchor: vert_anchor } }
+}
+
+#[wasm_bindgen]
+impl Options {
+    #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
-            text: "",
+            text: String::new(),
             width: 350,
             height: 19,
             bg_top_color: Color(0, 0, 255),
@@ -96,8 +136,8 @@ impl<'a> Options<'a> {
             text_over_ellipse: false,
             border_color: Some(ColorA(0, 0, 0, 255)),
             text_placement: Placement {
-                horz: AxisPlacement::Auto,
-                vert: AxisPlacement::Auto,
+                horz: AxisPlacement { anchor: AxisAnchor::Auto, offset: 0 },
+                vert: AxisPlacement { anchor: AxisAnchor::Auto, offset: 0 },
             },
             diag_stripes: Some(StripePattern {
                 color: ColorA(0, 0, 0, 180),
@@ -110,6 +150,7 @@ impl<'a> Options<'a> {
 }
 
 // returns flat RGB buffer: array of [r, g, b, r, g, b, ...] with length width*height*3.
+#[wasm_bindgen]
 pub fn generate(opts: &Options) -> Vec<u8> {
     let width = opts.width;
     let height = opts.height;
@@ -142,14 +183,14 @@ pub fn generate(opts: &Options) -> Vec<u8> {
         }
     }
 
-    if let Some(img) = opts.bg_image {
+    if let Some(img) = &opts.bg_image {
         let im_offx = img.placement.horz.to_offset(
-            AxisPlacement::Start(0),
+            AxisPlacement { anchor: AxisAnchor::Start, offset: 0 },
             img.width as isize,
             width as isize,
         );
         let im_offy = img.placement.vert.to_offset(
-            AxisPlacement::Start(0),
+            AxisPlacement { anchor: AxisAnchor::Start, offset: 0 },
             img.height as isize,
             height as isize,
         );
@@ -183,21 +224,21 @@ pub fn generate(opts: &Options) -> Vec<u8> {
         do_ellipse(&mut canvas);
     }
 
-    let rendered = font::render(opts.text);
+    let rendered = font::render(&opts.text);
     let textw = rendered.len() + 2;
     // +1 because this is the offset of the "main" text, but we computed it with the shadow
     let text_horz_offset =
         opts.text_placement
             .horz
-            .to_offset(AxisPlacement::End(6), textw as isize, width as isize)
+            .to_offset(AxisPlacement { anchor: AxisAnchor::End, offset: 6 }, textw as isize, width as isize)
             + 1;
     // the bounding box is technically 9px tall,
     // but the height of most letters is only 5px.
     // so we have +1 for the shadow and -2 for the box height diff
     let text_vert_offset =
         opts.text_placement
-            .horz
-            .to_offset(AxisPlacement::Center, 7, height as isize)
+            .vert
+            .to_offset(AxisPlacement { anchor: AxisAnchor::Center, offset: 0 }, 7, height as isize)
             - 1;
 
     // draw the shadow of the text first
@@ -234,8 +275,23 @@ pub fn generate(opts: &Options) -> Vec<u8> {
         // don't wanna draw the corners twice, in case the color is transparent
         canvas.horz_line(1, width - 1, 0, col);
         canvas.vert_line(1, height - 1, width - 1, col);
-        canvas.horz_line(0, width - 2, height - 1, col);
-        canvas.vert_line(0, height - 2, 0, col);
+        if width > 1 { canvas.horz_line(0, width - 2, height - 1, col); }
+        if height > 1 { canvas.vert_line(0, height - 2, 0, col); }
     }
     canvas.get_buf()
+}
+
+// im so lazy lol
+#[wasm_bindgen]
+pub fn generate_rgba(o: &Options) -> Vec<u8> {
+    let v = generate(o);
+    let pixs = v.len() / 3;
+    let mut out = vec![0; pixs * 4];
+    for i in 0..pixs {
+        out[i*4 + 0] = v[i*3 + 0];
+        out[i*4 + 1] = v[i*3 + 1];
+        out[i*4 + 2] = v[i*3 + 2];
+        out[i*4 + 3] = 255;
+    }
+    out
 }
